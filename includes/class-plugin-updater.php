@@ -150,7 +150,7 @@ class CTS_Plugin_Updater {
             }
         }
 
-        // Cache for 12 hours.
+        // Cache for 6 hours.
         set_transient( $this->cache_key, $release, $this->cache_duration );
 
         return $release;

@@ -3,10 +3,11 @@
  * Google Sheets Service for Content Tracker Sync.
  *
  * Self-contained Google Sheets API v4 client using JWT (Service Account) authentication.
- * Supports SMART COLUMN MATCHING — reads header row and places data in the correct
- * columns regardless of spreadsheet layout.
+ * Features 3-tier smart column matching and true append-at-end row placement.
+ * No external Composer dependencies required — uses WordPress HTTP API.
  *
  * @package ContentTrackerSync
+ * @since   3.0.0
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -61,51 +62,95 @@ class CTS_Google_Sheets_Service {
     private $access_token = null;
 
     /**
-     * Header-to-column mapping (cached after first read).
-     * Maps our data keys to column indices (0-indexed).
+     * Cached column map (data_key => column_index).
      *
      * @var array|null
      */
     private $column_map = null;
 
+    /*--------------------------------------------------------------
+     * 3-Tier Smart Column Matching — Header Aliases
+     *
+     * Tier 1: Exact lowercase match against these aliases.
+     * Tier 2: "Contains" match using the first alias group entry.
+     * Order matters: more specific keys (keywords_with_tags) must
+     *   come BEFORE less specific ones (keywords) to avoid false matches.
+     *------------------------------------------------------------*/
+
     /**
-     * Mapping of our internal data keys to possible header names (case-insensitive).
-     * The plugin will match ANY of these variations to find the correct column.
+     * Header aliases for smart column matching.
+     * Keys are internal data keys; values are arrays of known header names (lowercase).
      *
      * @var array
      */
     private static $header_aliases = array(
         'post_id' => array(
-            'post id', 'postid', 'id', 'post_id', 'column 1', 'column1',
-            '#', 'wp id', 'wordpress id', 'entry id',
+            'post id', 'postid', 'post_id', 'id', 'wp id', 'wordpress id',
+            'column 1', 'sr no', 'serial', '#', 'no', 'number', 'post number',
         ),
         'title' => array(
             'title', 'topic', 'topic (title)', 'post title', 'headline',
             'article title', 'name', 'magazine category', 'article',
+            'blog title', 'content title', 'heading', 'subject',
+            'page title', 'entry title', 'content name',
         ),
         'slug' => array(
             'slug', 'post slug', 'url slug', 'permalink', 'post_slug',
-            'url', 'link',
+            'url', 'link', 'post url', 'page url', 'post link',
         ),
-        'keywords' => array(
-            'keywords', 'keyword', 'tags', 'post tags', 'tag',
-            'categories', 'topics',
+        'seo_title' => array(
+            'seo title', 'seo heading', 'search title', 'og title',
+            'yoast title', 'rank math title', 'seo_title', 'meta title',
+            'search engine title', 'browser title',
         ),
         'keywords_with_tags' => array(
             'keywords with tags', 'keywords with tag', 'hashtags', 'hash tags',
             'keyword tags', 'tagged keywords', 'tags with hash',
-            'keywords_with_tags',
+            'keywords_with_tags', '#tags', 'hashtagged',
+        ),
+        'keywords' => array(
+            'keywords', 'keyword', 'tags', 'post tags', 'tag',
+            'categories', 'topics', 'labels', 'terms',
         ),
         'meta_description' => array(
             'meta description', 'meta_description', 'description',
             'seo description', 'meta desc', 'metadescription',
-            'meta', 'excerpt',
+            'meta', 'excerpt', 'summary', 'snippet', 'page description',
         ),
         'focus_keyphrase' => array(
             'focus keyphrase', 'focus keyword', 'focus_keyphrase',
             'focus_keyword', 'keyphrase', 'focus key', 'primary keyword',
-            'main keyword', 'target keyword',
+            'main keyword', 'target keyword', 'seo keyword', 'seo keyphrase',
         ),
+    );
+
+    /**
+     * Tier 2 "contains" keywords for each data key.
+     * Checked in order — more specific patterns first.
+     * Each entry: array( 'contains_term', 'data_key', optional 'must_not_contain' ).
+     *
+     * @var array
+     */
+    private static $contains_rules = array(
+        array( 'post id',      'post_id' ),
+        array( 'post_id',      'post_id' ),
+        array( 'seo title',    'seo_title' ),
+        array( 'seo heading',  'seo_title' ),
+        array( 'hashtag',      'keywords_with_tags' ),
+        array( 'with tags',    'keywords_with_tags' ),
+        array( 'with tag',     'keywords_with_tags' ),
+        array( 'keyword',      'keywords' ),
+        array( 'tag',          'keywords' ),
+        array( 'title',        'title' ),
+        array( 'topic',        'title' ),
+        array( 'heading',      'title' ),
+        array( 'slug',         'slug' ),
+        array( 'permalink',    'slug' ),
+        array( 'meta desc',    'meta_description' ),
+        array( 'description',  'meta_description' ),
+        array( 'keyphrase',    'focus_keyphrase' ),
+        array( 'focus key',    'focus_keyphrase' ),
+        array( 'focus word',   'focus_keyphrase' ),
     );
 
     /**
@@ -127,6 +172,7 @@ class CTS_Google_Sheets_Service {
 
     /**
      * Read Row 1 headers and build a mapping of data keys to column indices.
+     * Uses 3-tier matching: exact → contains → skip.
      *
      * @return array|WP_Error Map of data_key => column_index, or error.
      */
@@ -139,6 +185,10 @@ class CTS_Google_Sheets_Service {
         $range   = $this->build_range( '1:1' );
         $headers = $this->get_values( $range );
 
+        if ( is_wp_error( $headers ) ) {
+            return $headers;
+        }
+
         if ( empty( $headers ) || empty( $headers[0] ) ) {
             return new WP_Error(
                 'cts_no_headers',
@@ -147,9 +197,10 @@ class CTS_Google_Sheets_Service {
         }
 
         $header_row = $headers[0];
-        $map = array();
+        $map        = array();
+        $matched    = array(); // Track which data_keys are already matched.
 
-        // For each header cell, try to match it to one of our known data keys.
+        // ---- Tier 1: Exact match (case-insensitive) ----
         foreach ( $header_row as $col_index => $header_value ) {
             $normalized = strtolower( trim( $header_value ) );
 
@@ -158,16 +209,45 @@ class CTS_Google_Sheets_Service {
             }
 
             foreach ( self::$header_aliases as $data_key => $aliases ) {
-                // Skip if we already matched this data key.
-                if ( isset( $map[ $data_key ] ) ) {
+                if ( isset( $matched[ $data_key ] ) ) {
                     continue;
                 }
 
                 foreach ( $aliases as $alias ) {
                     if ( $normalized === $alias ) {
-                        $map[ $data_key ] = $col_index;
-                        break 2; // Found match, move to next header cell.
+                        $map[ $data_key ]     = $col_index;
+                        $matched[ $data_key ] = true;
+                        break 2;
                     }
+                }
+            }
+        }
+
+        // ---- Tier 2: Contains match (for headers not matched in Tier 1) ----
+        foreach ( $header_row as $col_index => $header_value ) {
+            // Skip if this column was already matched.
+            if ( in_array( $col_index, $map, true ) ) {
+                continue;
+            }
+
+            $normalized = strtolower( trim( $header_value ) );
+
+            if ( '' === $normalized ) {
+                continue;
+            }
+
+            foreach ( self::$contains_rules as $rule ) {
+                $contains_term = $rule[0];
+                $data_key      = $rule[1];
+
+                if ( isset( $matched[ $data_key ] ) ) {
+                    continue;
+                }
+
+                if ( false !== strpos( $normalized, $contains_term ) ) {
+                    $map[ $data_key ]     = $col_index;
+                    $matched[ $data_key ] = true;
+                    break;
                 }
             }
         }
@@ -186,6 +266,8 @@ class CTS_Google_Sheets_Service {
     /**
      * Convert a key-value data array into a positional row array
      * using the column map from the header row.
+     *
+     * Unmapped columns get null (they will not be written to).
      *
      * @param  array $data Associative array of data_key => value.
      * @return array|WP_Error Positional row array or error.
@@ -228,7 +310,7 @@ class CTS_Google_Sheets_Service {
      * Smart: finds whichever column contains Post IDs based on headers.
      *
      * @param  int $post_id The WordPress Post ID.
-     * @return int|false Row number (1-indexed) or false if not found.
+     * @return int|false|WP_Error Row number (1-indexed), false if not found, or WP_Error.
      */
     public function find_row_by_post_id( int $post_id ) {
 
@@ -240,10 +322,15 @@ class CTS_Google_Sheets_Service {
             $id_col_index = $map['post_id'];
         }
 
-        // Convert index to letter (0=A, 1=B, 2=C, ...).
-        $col_letter = chr( 65 + $id_col_index );
+        // Convert index to letter (0=A, 1=B, ... 25=Z).
+        $col_letter = chr( 65 + min( $id_col_index, 25 ) );
         $range      = $this->build_range( $col_letter . ':' . $col_letter );
         $values     = $this->get_values( $range );
+
+        // If the API returned an error, propagate it.
+        if ( is_wp_error( $values ) ) {
+            return $values;
+        }
 
         if ( empty( $values ) ) {
             return false;
@@ -259,23 +346,41 @@ class CTS_Google_Sheets_Service {
     }
 
     /**
-     * Append a new row of data.
+     * Find the true last row with any data across ALL columns.
+     * This ensures new data is always appended at the very end.
      *
-     * @param  array $row_data Flat array of cell values (positional).
+     * @return int Last row number with data (0 if sheet is empty or has only headers).
+     */
+    public function find_last_data_row() {
+
+        // Read the entire sheet to find the true last row.
+        $range  = $this->build_range( 'A:ZZ' );
+        $values = $this->get_values( $range );
+
+        if ( is_wp_error( $values ) || empty( $values ) ) {
+            return 0;
+        }
+
+        // The Sheets API only returns rows up to the last row with data.
+        // So count($values) gives us the last row number.
+        return count( $values );
+    }
+
+    /**
+     * Append a new row of data at the TRUE end of the sheet.
+     * Uses smart column mapping — only writes to plugin-managed columns.
+     *
+     * @param  array $row_data Positional row array (may contain nulls for unmanaged columns).
      * @return array|WP_Error API response or error.
      */
     public function append_row( array $row_data ) {
 
-        $range = $this->build_range( 'A1' );
-        $url   = self::SHEETS_API_BASE . '/' . $this->spreadsheet_id
-               . '/values/' . rawurlencode( $range ) . ':append'
-               . '?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+        // Find the actual last row with data across all columns.
+        $last_row   = $this->find_last_data_row();
+        $target_row = $last_row + 1; // Write to the next empty row.
 
-        $body = wp_json_encode( array(
-            'values' => array( $row_data ),
-        ) );
-
-        return $this->api_request( $url, 'POST', $body );
+        // Use smart cell-by-cell update to avoid overwriting unmanaged columns.
+        return $this->write_row_smart( $target_row, $row_data );
     }
 
     /**
@@ -283,12 +388,24 @@ class CTS_Google_Sheets_Service {
      * Only updates cells that have data (leaves other columns untouched).
      *
      * @param  int   $row_number 1-indexed row number.
-     * @param  array $row_data   Flat array of cell values (positional, may contain nulls).
+     * @param  array $row_data   Positional row array (may contain nulls for unmanaged columns).
      * @return array|WP_Error    API response or error.
      */
     public function update_row( int $row_number, array $row_data ) {
+        return $this->write_row_smart( $row_number, $row_data );
+    }
 
-        // Build individual cell updates to avoid overwriting unrelated columns.
+    /**
+     * Write data to a specific row, cell by cell.
+     * Only writes to cells that have a non-null value.
+     * This ensures columns the plugin doesn't manage are never touched.
+     *
+     * @param  int   $row_number 1-indexed row number.
+     * @param  array $row_data   Positional row array (nulls = skip).
+     * @return array|WP_Error    API response or error.
+     */
+    private function write_row_smart( int $row_number, array $row_data ) {
+
         $requests = array();
 
         foreach ( $row_data as $col_index => $value ) {
@@ -306,7 +423,7 @@ class CTS_Google_Sheets_Service {
         }
 
         if ( empty( $requests ) ) {
-            return new WP_Error( 'cts_no_data', 'No data to update.' );
+            return new WP_Error( 'cts_no_data', 'No data to write.' );
         }
 
         $url = self::SHEETS_API_BASE . '/' . $this->spreadsheet_id
@@ -328,7 +445,7 @@ class CTS_Google_Sheets_Service {
      * Get values from a range.
      *
      * @param  string $range A1-style range (e.g. "Sheet1!A:A").
-     * @return array  2D array of cell values.
+     * @return array|WP_Error 2D array of cell values or WP_Error.
      */
     public function get_values( string $range ) {
 
@@ -337,7 +454,12 @@ class CTS_Google_Sheets_Service {
 
         $response = $this->api_request( $url, 'GET' );
 
-        if ( is_wp_error( $response ) || empty( $response['values'] ) ) {
+        // Propagate errors so callers (test connection, find_row) can detect failures.
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        if ( empty( $response['values'] ) ) {
             return array();
         }
 

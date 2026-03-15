@@ -47,7 +47,7 @@
             // Clone to avoid mutating the DOM.
             var $clone = $el.clone();
             $clone.find('button, a, .ntdelbutton, .remove-tag-icon, .screen-reader-text, .dashicons').remove();
-            var text = $clone.text().replace(/×/g, '').replace(/✕/g, '').replace(/X/g, '').trim();
+            var text = $clone.text().replace(/×/g, '').replace(/✕/g, '').trim();
             // Avoid picking up stray single characters from button remnants.
             if (text && text.length > 0) {
                 tags.push(text);
