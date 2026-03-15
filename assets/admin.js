@@ -215,6 +215,11 @@
                     $status
                         .addClass('cts-status-success')
                         .html('<span>✓ ' + response.data.message + '</span>');
+                    // Smooth blue → green animation.
+                    $button.addClass('cts-btn-success');
+                    setTimeout(function () {
+                        $button.removeClass('cts-btn-success');
+                    }, 3000);
                 } else {
                     var msg = response.data && response.data.message
                         ? response.data.message
@@ -374,11 +379,20 @@
                                 isBusy: status === 'syncing',
                                 disabled: status === 'syncing',
                                 onClick: handleClick,
-                                style: { width: '100%', justifyContent: 'center' },
+                                style: {
+                                    width: '100%',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    background: status === 'success'
+                                        ? 'linear-gradient(135deg, #00a32a 0%, #008a20 100%)'
+                                        : undefined,
+                                },
                             },
                             status === 'syncing'
                                 ? ctsData.strings.syncing
-                                : ctsData.strings.btnLabel
+                                : status === 'success'
+                                    ? '✓ Synced!'
+                                    : ctsData.strings.btnLabel
                         ),
                         status === 'success'
                             ? el(
