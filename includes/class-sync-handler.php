@@ -321,7 +321,7 @@ class CTS_Sync_Handler {
      * Collect all required post data as a flat row array.
      *
      * Column order:
-     * Post ID | Topic | Post Slug | SEO Title | Keywords | Keywords with tags | Meta Description | Focus Keyphrase
+     * Post ID | Topic (Title) | Post Slug | Keywords | Keywords with tags | Meta Description | Focus Keyphrase
      *
      * @param  WP_Post $post The post object.
      * @param  array   $incoming_tags     Tag names from client (Classic Editor).
@@ -334,17 +334,7 @@ class CTS_Sync_Handler {
         $title      = $post->post_title;
         $slug       = $post->post_name;
 
-        // SEO Title — try Yoast, Rank Math, AIOSEO, then fall back to post title.
-        $seo_title = get_post_meta( $post_id, '_yoast_wpseo_title', true );
-        if ( empty( $seo_title ) ) {
-            $seo_title = get_post_meta( $post_id, 'rank_math_title', true );
-        }
-        if ( empty( $seo_title ) ) {
-            $seo_title = get_post_meta( $post_id, '_aioseo_title', true );
-        }
-        if ( empty( $seo_title ) ) {
-            $seo_title = $title; // fallback to post title
-        }
+
 
         // Focus Keyphrase — try Yoast, Rank Math, AIOSEO.
         $focus_keyphrase = get_post_meta( $post_id, '_yoast_wpseo_focuskw', true );
@@ -450,7 +440,6 @@ class CTS_Sync_Handler {
             (string) $post_id,
             $title,
             $slug,
-            $seo_title,
             $tags_csv,
             $tags_hashed,
             $meta_desc ? $meta_desc : '',
