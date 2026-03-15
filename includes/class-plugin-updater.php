@@ -59,11 +59,11 @@ class CTS_Plugin_Updater {
     private $cache_key = 'cts_github_update_cache';
 
     /**
-     * How long to cache the update check (in seconds). Default: 12 hours.
+     * How long to cache the update check (in seconds). Default: 6 hours.
      *
      * @var int
      */
-    private $cache_duration = 43200;
+    private $cache_duration = 21600;
 
     /**
      * Constructor — hook into WordPress update system.
@@ -83,6 +83,15 @@ class CTS_Plugin_Updater {
 
         // Ensure the updater correctly renames the extracted folder.
         add_filter( 'upgrader_source_selection', array( $this, 'fix_directory_name' ), 10, 4 );
+
+        // Clear our cache when WordPress clears its own update cache (e.g. "Check Again").
+        add_action( 'delete_site_transient_update_plugins', array( $this, 'clear_cache' ) );
+
+        // Add a "Check for updates" link on the plugins page.
+        add_filter( 'plugin_action_links_' . CTS_PLUGIN_BASENAME, array( $this, 'add_check_update_link' ) );
+
+        // Handle the force-check request.
+        add_action( 'admin_init', array( $this, 'handle_force_check' ) );
     }
 
     /**
@@ -291,11 +300,56 @@ class CTS_Plugin_Updater {
 
     /**
      * Clear the cached release data.
-     * Call this when you want to force a fresh check (e.g., from a settings page).
+     * Called automatically when WordPress refreshes its update check,
+     * or manually via the "Check for updates" link on the plugins page.
      *
      * @return void
      */
     public static function clear_cache() {
         delete_transient( 'cts_github_update_cache' );
+    }
+
+    /**
+     * Add a "Check for updates" action link on the Plugins page.
+     *
+     * @param  array $links Existing action links.
+     * @return array Modified action links.
+     */
+    public function add_check_update_link( $links ) {
+        $url = wp_nonce_url(
+            admin_url( 'plugins.php?cts_force_check=1' ),
+            'cts_force_update_check'
+        );
+        $links['cts-check-update'] = '<a href="' . esc_url( $url ) . '">Check for updates</a>';
+        return $links;
+    }
+
+    /**
+     * Handle the force update check request from the plugins page link.
+     *
+     * @return void
+     */
+    public function handle_force_check() {
+        if ( ! isset( $_GET['cts_force_check'] ) || '1' !== $_GET['cts_force_check'] ) {
+            return;
+        }
+
+        if ( ! current_user_can( 'update_plugins' ) ) {
+            return;
+        }
+
+        // Verify the nonce.
+        check_admin_referer( 'cts_force_update_check' );
+
+        // Clear our cache.
+        self::clear_cache();
+
+        // Force WordPress to re-check all plugin updates.
+        delete_site_transient( 'update_plugins' );
+        wp_update_plugins();
+
+        // Redirect back to plugins page with a notice.
+        wp_safe_redirect( admin_url( 'plugins.php?cts_checked=1' ) );
+        exit;
     }
 }
