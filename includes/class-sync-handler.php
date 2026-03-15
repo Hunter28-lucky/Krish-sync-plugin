@@ -282,11 +282,20 @@ class CTS_Sync_Handler {
             }
         }
 
-        // ----- Collect post data -----
-        $row_data = $this->collect_post_data( $post, $incoming_tags, $incoming_tag_ids );
+        // ----- Collect post data (as key-value pairs) -----
+        $post_data = $this->collect_post_data( $post, $incoming_tags, $incoming_tag_ids );
 
-        // ----- Send to Google Sheets -----
+        // ----- Send to Google Sheets with SMART COLUMN MATCHING -----
         $sheets = new CTS_Google_Sheets_Service( $credentials, $spreadsheet_id, $sheet_name );
+
+        // Map data keys to spreadsheet columns by reading Row 1 headers.
+        $row_data = $sheets->map_data_to_row( $post_data );
+
+        if ( is_wp_error( $row_data ) ) {
+            wp_send_json_error( array(
+                'message' => $row_data->get_error_message(),
+            ) );
+        }
 
         // Check for existing row (duplicate prevention).
         $existing_row = $sheets->find_row_by_post_id( $post_id );
@@ -318,23 +327,21 @@ class CTS_Sync_Handler {
      *------------------------------------------------------------*/
 
     /**
-     * Collect all required post data as a flat row array.
+     * Collect all required post data as an associative array.
      *
-     * Column order:
-     * Post ID | Topic (Title) | Post Slug | Keywords | Keywords with tags | Meta Description | Focus Keyphrase
+     * Keys match the data keys used in CTS_Google_Sheets_Service::$header_aliases
+     * so the smart column mapper can place them in the right columns.
      *
      * @param  WP_Post $post The post object.
      * @param  array   $incoming_tags     Tag names from client (Classic Editor).
      * @param  array   $incoming_tag_ids  Tag term IDs from client (Gutenberg).
-     * @return array   Flat array of cell values.
+     * @return array   Associative array: data_key => value.
      */
     private function collect_post_data( $post, $incoming_tags = array(), $incoming_tag_ids = array() ) {
 
         $post_id    = $post->ID;
         $title      = $post->post_title;
         $slug       = $post->post_name;
-
-
 
         // Focus Keyphrase — try Yoast, Rank Math, AIOSEO.
         $focus_keyphrase = get_post_meta( $post_id, '_yoast_wpseo_focuskw', true );
@@ -436,14 +443,15 @@ class CTS_Sync_Handler {
         $tags_csv    = implode( ', ', $tags );
         $tags_hashed = $this->tags_to_hashtags( $tags );
 
+        // Return as associative array — keys match CTS_Google_Sheets_Service::$header_aliases.
         return array(
-            (string) $post_id,
-            $title,
-            $slug,
-            $tags_csv,
-            $tags_hashed,
-            $meta_desc ? $meta_desc : '',
-            $focus_keyphrase ? $focus_keyphrase : '',
+            'post_id'            => (string) $post_id,
+            'title'              => $title,
+            'slug'               => $slug,
+            'keywords'           => $tags_csv,
+            'keywords_with_tags' => $tags_hashed,
+            'meta_description'   => $meta_desc ? $meta_desc : '',
+            'focus_keyphrase'    => $focus_keyphrase ? $focus_keyphrase : '',
         );
     }
 

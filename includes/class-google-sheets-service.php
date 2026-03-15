@@ -3,7 +3,8 @@
  * Google Sheets Service for Content Tracker Sync.
  *
  * Self-contained Google Sheets API v4 client using JWT (Service Account) authentication.
- * No external Composer dependencies required — uses WordPress HTTP API.
+ * Supports SMART COLUMN MATCHING — reads header row and places data in the correct
+ * columns regardless of spreadsheet layout.
  *
  * @package ContentTrackerSync
  */
@@ -60,6 +61,54 @@ class CTS_Google_Sheets_Service {
     private $access_token = null;
 
     /**
+     * Header-to-column mapping (cached after first read).
+     * Maps our data keys to column indices (0-indexed).
+     *
+     * @var array|null
+     */
+    private $column_map = null;
+
+    /**
+     * Mapping of our internal data keys to possible header names (case-insensitive).
+     * The plugin will match ANY of these variations to find the correct column.
+     *
+     * @var array
+     */
+    private static $header_aliases = array(
+        'post_id' => array(
+            'post id', 'postid', 'id', 'post_id', 'column 1', 'column1',
+            '#', 'wp id', 'wordpress id', 'entry id',
+        ),
+        'title' => array(
+            'title', 'topic', 'topic (title)', 'post title', 'headline',
+            'article title', 'name', 'magazine category', 'article',
+        ),
+        'slug' => array(
+            'slug', 'post slug', 'url slug', 'permalink', 'post_slug',
+            'url', 'link',
+        ),
+        'keywords' => array(
+            'keywords', 'keyword', 'tags', 'post tags', 'tag',
+            'categories', 'topics',
+        ),
+        'keywords_with_tags' => array(
+            'keywords with tags', 'keywords with tag', 'hashtags', 'hash tags',
+            'keyword tags', 'tagged keywords', 'tags with hash',
+            'keywords_with_tags',
+        ),
+        'meta_description' => array(
+            'meta description', 'meta_description', 'description',
+            'seo description', 'meta desc', 'metadescription',
+            'meta', 'excerpt',
+        ),
+        'focus_keyphrase' => array(
+            'focus keyphrase', 'focus keyword', 'focus_keyphrase',
+            'focus_keyword', 'keyphrase', 'focus key', 'primary keyword',
+            'main keyword', 'target keyword',
+        ),
+    );
+
+    /**
      * Constructor.
      *
      * @param array  $credentials    Decoded service account JSON.
@@ -73,19 +122,128 @@ class CTS_Google_Sheets_Service {
     }
 
     /*--------------------------------------------------------------
+     * Smart Column Mapping
+     *------------------------------------------------------------*/
+
+    /**
+     * Read Row 1 headers and build a mapping of data keys to column indices.
+     *
+     * @return array|WP_Error Map of data_key => column_index, or error.
+     */
+    public function get_column_map() {
+
+        if ( null !== $this->column_map ) {
+            return $this->column_map;
+        }
+
+        $range   = $this->build_range( '1:1' );
+        $headers = $this->get_values( $range );
+
+        if ( empty( $headers ) || empty( $headers[0] ) ) {
+            return new WP_Error(
+                'cts_no_headers',
+                'Could not read the header row (Row 1) from your spreadsheet. Make sure your sheet has column headers in Row 1.'
+            );
+        }
+
+        $header_row = $headers[0];
+        $map = array();
+
+        // For each header cell, try to match it to one of our known data keys.
+        foreach ( $header_row as $col_index => $header_value ) {
+            $normalized = strtolower( trim( $header_value ) );
+
+            if ( '' === $normalized ) {
+                continue;
+            }
+
+            foreach ( self::$header_aliases as $data_key => $aliases ) {
+                // Skip if we already matched this data key.
+                if ( isset( $map[ $data_key ] ) ) {
+                    continue;
+                }
+
+                foreach ( $aliases as $alias ) {
+                    if ( $normalized === $alias ) {
+                        $map[ $data_key ] = $col_index;
+                        break 2; // Found match, move to next header cell.
+                    }
+                }
+            }
+        }
+
+        $this->column_map = $map;
+
+        // Debug logging.
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[CTS] Header row: ' . wp_json_encode( $header_row ) );
+            error_log( '[CTS] Column map: ' . wp_json_encode( $map ) );
+        }
+
+        return $map;
+    }
+
+    /**
+     * Convert a key-value data array into a positional row array
+     * using the column map from the header row.
+     *
+     * @param  array $data Associative array of data_key => value.
+     * @return array|WP_Error Positional row array or error.
+     */
+    public function map_data_to_row( array $data ) {
+
+        $map = $this->get_column_map();
+
+        if ( is_wp_error( $map ) ) {
+            return $map;
+        }
+
+        if ( empty( $map ) ) {
+            return new WP_Error(
+                'cts_no_matching_columns',
+                'No matching columns found in your spreadsheet. Make sure Row 1 has headers like "Post ID", "Title", "Slug", "Keywords", "Meta Description", etc.'
+            );
+        }
+
+        // Find the max column index to determine row length.
+        $max_col = max( array_values( $map ) );
+        $row     = array_fill( 0, $max_col + 1, null );
+
+        // Place each data value in its mapped column position.
+        foreach ( $data as $key => $value ) {
+            if ( isset( $map[ $key ] ) ) {
+                $row[ $map[ $key ] ] = $value;
+            }
+        }
+
+        return $row;
+    }
+
+    /*--------------------------------------------------------------
      * Public API
      *------------------------------------------------------------*/
 
     /**
-     * Find the row number of an existing Post ID in column A.
+     * Find the row number of an existing Post ID.
+     * Smart: finds whichever column contains Post IDs based on headers.
      *
      * @param  int $post_id The WordPress Post ID.
      * @return int|false Row number (1-indexed) or false if not found.
      */
     public function find_row_by_post_id( int $post_id ) {
 
-        $range  = $this->build_range( 'A:A' );
-        $values = $this->get_values( $range );
+        $map = $this->get_column_map();
+
+        // Determine which column has Post IDs.
+        $id_col_index = 0; // Default to column A.
+        if ( ! is_wp_error( $map ) && isset( $map['post_id'] ) ) {
+            $id_col_index = $map['post_id'];
+        }
+
+        // Convert index to letter (0=A, 1=B, 2=C, ...).
+        $col_letter = chr( 65 + $id_col_index );
+        $range      = $this->build_range( $col_letter . ':' . $col_letter );
+        $values     = $this->get_values( $range );
 
         if ( empty( $values ) ) {
             return false;
@@ -103,7 +261,7 @@ class CTS_Google_Sheets_Service {
     /**
      * Append a new row of data.
      *
-     * @param  array $row_data Flat array of cell values.
+     * @param  array $row_data Flat array of cell values (positional).
      * @return array|WP_Error API response or error.
      */
     public function append_row( array $row_data ) {
@@ -121,24 +279,45 @@ class CTS_Google_Sheets_Service {
     }
 
     /**
-     * Update an existing row.
+     * Update an existing row using smart column mapping.
+     * Only updates cells that have data (leaves other columns untouched).
      *
      * @param  int   $row_number 1-indexed row number.
-     * @param  array $row_data   Flat array of cell values.
+     * @param  array $row_data   Flat array of cell values (positional, may contain nulls).
      * @return array|WP_Error    API response or error.
      */
     public function update_row( int $row_number, array $row_data ) {
 
-        $range = $this->build_range( 'A' . $row_number );
-        $url   = self::SHEETS_API_BASE . '/' . $this->spreadsheet_id
-               . '/values/' . rawurlencode( $range )
-               . '?valueInputOption=USER_ENTERED';
+        // Build individual cell updates to avoid overwriting unrelated columns.
+        $requests = array();
+
+        foreach ( $row_data as $col_index => $value ) {
+            if ( null === $value ) {
+                continue; // Skip columns we don't manage.
+            }
+
+            $col_letter = chr( 65 + $col_index );
+            $cell_range = $this->build_range( $col_letter . $row_number );
+
+            $requests[] = array(
+                'range'  => $cell_range,
+                'values' => array( array( $value ) ),
+            );
+        }
+
+        if ( empty( $requests ) ) {
+            return new WP_Error( 'cts_no_data', 'No data to update.' );
+        }
+
+        $url = self::SHEETS_API_BASE . '/' . $this->spreadsheet_id
+             . '/values:batchUpdate';
 
         $body = wp_json_encode( array(
-            'values' => array( $row_data ),
+            'valueInputOption' => 'USER_ENTERED',
+            'data'             => $requests,
         ) );
 
-        return $this->api_request( $url, 'PUT', $body );
+        return $this->api_request( $url, 'POST', $body );
     }
 
     /*--------------------------------------------------------------
