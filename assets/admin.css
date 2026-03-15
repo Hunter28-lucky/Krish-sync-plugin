@@ -1,0 +1,171 @@
+/**
+ * Content Tracker Sync — Admin Styles
+ *
+ * Styles for the settings page, sync button, and status notices.
+ *
+ * @package ContentTrackerSync
+ */
+
+/* ========================================
+   Settings Page
+   ======================================== */
+
+.cts-settings-wrap {
+    max-width: 860px;
+}
+
+.cts-settings-card {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 24px 28px;
+    margin-top: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cts-settings-card h2 {
+    margin-top: 0;
+    font-size: 1.15em;
+    color: #1d2327;
+}
+
+.cts-info-card ol {
+    padding-left: 20px;
+}
+
+.cts-info-card ol li {
+    margin-bottom: 6px;
+    line-height: 1.6;
+}
+
+.cts-info-card table {
+    margin-top: 12px;
+}
+
+/* ========================================
+   Sync Meta Box (Classic Editor)
+   ======================================== */
+
+#cts-sync-wrapper {
+    text-align: center;
+    padding: 12px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
+    border: 1px solid #dcdcde;
+}
+
+#cts-sync-wrapper .cts-description {
+    font-size: 12px;
+    color: #4f5d6b;
+    margin-bottom: 6px;
+}
+
+#cts-sync-wrapper .cts-branding-text {
+    margin: 0 0 12px;
+    font-size: 11px;
+    color: #6a727a;
+    letter-spacing: 0.2px;
+}
+
+#cts-sync-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #0f62fe 0%, #0353e9 100%);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+#cts-sync-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+#cts-sync-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ========================================
+   Status Messages
+   ======================================== */
+
+.cts-status-success {
+    color: #00a32a;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.cts-status-error {
+    color: #d63638;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+#cts-sync-status {
+    min-height: 20px;
+}
+
+/* ========================================
+   Gutenberg Panel
+   ======================================== */
+
+.cts-gutenberg-panel {
+    width: 100%;
+}
+
+.cts-gutenberg-panel .components-panel__row,
+.cts-gutenberg-panel {
+    border-radius: 8px;
+}
+
+.cts-gutenberg-panel .cts-panel-note {
+    margin: 0 0 4px;
+    font-size: 12px;
+    color: #4f5d6b;
+}
+
+.cts-gutenberg-panel .cts-panel-credit {
+    margin: 0 0 10px;
+    font-size: 11px;
+    color: #6a727a;
+}
+
+.cts-gutenberg-panel .cts-status-success {
+    color: #00a32a;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cts-gutenberg-panel .cts-status-error {
+    color: #d63638;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cts-brand-card {
+    margin-top: 14px;
+    border-left: 4px solid #0f62fe;
+}
+
+.cts-brand-card p {
+    margin: 0;
+    font-size: 13px;
+    color: #1d2327;
+}
+
+.cts-brand-card a {
+    color: #0353e9;
+    text-decoration: none;
+}
+
+.cts-brand-card a:hover {
+    text-decoration: underline;
+}
