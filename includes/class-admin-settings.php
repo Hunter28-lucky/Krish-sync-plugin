@@ -144,6 +144,21 @@ class CTS_Admin_Settings {
             'content-tracker-sync',
             'cts_main_section'
         );
+
+        // ----- Apps Script Web App URL (for doc creation) -----
+        register_setting( self::OPTION_GROUP, 'cts_apps_script_url', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default'           => '',
+        ) );
+
+        add_settings_field(
+            'cts_apps_script_url',
+            __( 'Apps Script Web App URL', 'content-tracker-sync' ),
+            array( $this, 'render_apps_script_url_field' ),
+            'content-tracker-sync',
+            'cts_main_section'
+        );
     }
 
     /**
@@ -257,6 +272,32 @@ class CTS_Admin_Settings {
         <p class="description" style="margin-top: 4px; color: #d63638;">
             <strong><?php esc_html_e( 'Important:', 'content-tracker-sync' ); ?></strong>
             <?php esc_html_e( 'Share this Drive folder with the service account email (same email as above) as Editor. Also enable the Google Drive API in your Google Cloud project.', 'content-tracker-sync' ); ?>
+        </p>
+        <?php
+    }
+
+    /**
+     * Render the Apps Script Web App URL text field.
+     *
+     * @return void
+     */
+    public function render_apps_script_url_field() {
+        $value = get_option( 'cts_apps_script_url', '' );
+        ?>
+        <input
+            type="url"
+            id="cts_apps_script_url"
+            name="cts_apps_script_url"
+            value="<?php echo esc_attr( $value ); ?>"
+            class="regular-text"
+            placeholder="<?php esc_attr_e( 'https://script.google.com/macros/s/.../exec', 'content-tracker-sync' ); ?>"
+        />
+        <p class="description">
+            <?php esc_html_e( 'Required for Google Docs creation. Deploy the Apps Script as a Web App and paste the URL here.', 'content-tracker-sync' ); ?>
+        </p>
+        <p class="description" style="margin-top: 4px;">
+            <strong><?php esc_html_e( 'How to set up:', 'content-tracker-sync' ); ?></strong>
+            <?php esc_html_e( '1) Open your Google Sheet → Extensions → Apps Script. 2) Replace the code with the provided google-apps-script.js. 3) Set DRIVE_FOLDER_ID in the script. 4) Deploy → New deployment → Web app → Execute as "Me" → Access "Anyone". 5) Copy the URL here.', 'content-tracker-sync' ); ?>
         </p>
         <?php
     }
