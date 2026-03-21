@@ -139,6 +139,11 @@ class CTS_Google_Docs_Service {
         // --- Step 1: Create an empty Google Doc via Docs API ---
         $create_url = self::DOCS_API_BASE . '/documents';
 
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[CTS-DOCS] Step 1: Creating doc via POST ' . $create_url );
+            error_log( '[CTS-DOCS] Using service account: ' . ( isset( $this->credentials['client_email'] ) ? $this->credentials['client_email'] : 'UNKNOWN' ) );
+        }
+
         $create_response = wp_remote_post( $create_url, array(
             'timeout' => 30,
             'headers' => array(
@@ -148,9 +153,9 @@ class CTS_Google_Docs_Service {
             'body'    => wp_json_encode( array( 'title' => $title ) ),
         ) );
 
-        $create_result = $this->parse_response( $create_response );
+        $create_result = $this->parse_response( $create_response, 'Step 1: Create Doc' );
         if ( is_wp_error( $create_result ) ) {
-            return $create_result;
+            return new WP_Error( 'cts_docs_error', '[Create Doc] ' . $create_result->get_error_message() );
         }
 
         $new_doc_id = isset( $create_result['documentId'] ) ? $create_result['documentId'] : '';
@@ -164,6 +169,10 @@ class CTS_Google_Docs_Service {
                   . '&removeParents=root'
                   . '&supportsAllDrives=true';
 
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[CTS-DOCS] Step 2: Moving doc ' . $new_doc_id . ' to folder ' . $this->folder_id );
+        }
+
         $move_response = wp_remote_request( $move_url, array(
             'method'  => 'PATCH',
             'timeout' => 15,
@@ -174,11 +183,11 @@ class CTS_Google_Docs_Service {
             'body'    => '{}',
         ) );
 
-        $move_result = $this->parse_response( $move_response );
+        $move_result = $this->parse_response( $move_response, 'Step 2: Move to Folder' );
         if ( is_wp_error( $move_result ) ) {
             // Doc was created but couldn't be moved — still usable.
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( '[CTS] Could not move doc to folder: ' . $move_result->get_error_message() );
+                error_log( '[CTS-DOCS] Could not move doc to folder: ' . $move_result->get_error_message() );
             }
         }
 
@@ -211,6 +220,10 @@ class CTS_Google_Docs_Service {
         // --- Rename via Drive API ---
         $rename_url = self::DRIVE_API_BASE . '/files/' . $doc_id . '?supportsAllDrives=true';
 
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[CTS-DOCS] Update: Renaming doc ' . $doc_id );
+        }
+
         $rename_response = wp_remote_request( $rename_url, array(
             'method'  => 'PATCH',
             'timeout' => 15,
@@ -221,9 +234,9 @@ class CTS_Google_Docs_Service {
             'body'    => wp_json_encode( array( 'name' => $title ) ),
         ) );
 
-        $rename_result = $this->parse_response( $rename_response );
+        $rename_result = $this->parse_response( $rename_response, 'Update: Rename Doc' );
         if ( is_wp_error( $rename_result ) ) {
-            return $rename_result;
+            return new WP_Error( 'cts_docs_error', '[Rename Doc] ' . $rename_result->get_error_message() );
         }
 
         // --- Get current doc length so we can clear it ---
@@ -372,16 +385,23 @@ class CTS_Google_Docs_Service {
      * @param  array|WP_Error $response wp_remote_* response.
      * @return array|WP_Error Decoded JSON or error.
      */
-    private function parse_response( $response ) {
+    private function parse_response( $response, string $step_label = '' ) {
 
         if ( is_wp_error( $response ) ) {
             return $response;
         }
 
         $code = wp_remote_retrieve_response_code( $response );
-        $json = json_decode( wp_remote_retrieve_body( $response ), true );
+        $raw_body = wp_remote_retrieve_body( $response );
+        $json = json_decode( $raw_body, true );
 
         if ( $code < 200 || $code >= 300 ) {
+
+            // Log the FULL response for debugging.
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[CTS-DOCS] API ERROR at ' . $step_label . ' | HTTP ' . $code . ' | Response: ' . substr( $raw_body, 0, 1000 ) );
+            }
+
             $api_msg = '';
 
             // Drive-style error.
@@ -392,9 +412,17 @@ class CTS_Google_Docs_Service {
             if ( empty( $api_msg ) && isset( $json['error']['status'] ) ) {
                 $api_msg = $json['error']['status'];
             }
+            // Check for reason in errors array.
+            $reason = '';
+            if ( isset( $json['error']['errors'][0]['reason'] ) ) {
+                $reason = $json['error']['errors'][0]['reason'];
+            }
 
             if ( 403 === $code ) {
                 $message = 'Permission denied (HTTP 403). ' . $api_msg;
+                if ( $reason ) {
+                    $message .= ' [Reason: ' . $reason . ']';
+                }
             } elseif ( 404 === $code ) {
                 $message = 'Not found (HTTP 404). Check your Folder ID. ' . $api_msg;
             } elseif ( 401 === $code ) {
