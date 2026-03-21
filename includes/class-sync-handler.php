@@ -372,9 +372,10 @@ class CTS_Sync_Handler
                     }
                 }
             } else {
-                // Log doc creation errors but don't fail the whole sync.
+                // Capture doc error for user feedback.
+                $doc_error = $doc_result->get_error_message();
                 if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('[CTS] Google Doc error for post #' . $post_id . ': ' . $doc_result->get_error_message());
+                    error_log('[CTS] Google Doc error for post #' . $post_id . ': ' . $doc_error);
                 }
             }
         }
@@ -389,6 +390,8 @@ class CTS_Sync_Handler
 
         if ($doc_url) {
             $message .= ' ' . __('+ Doc created ✓', 'content-tracker-sync');
+        } elseif (!empty($doc_error)) {
+            $message .= ' | Doc error: ' . $doc_error;
         }
 
         wp_send_json_success(array(
