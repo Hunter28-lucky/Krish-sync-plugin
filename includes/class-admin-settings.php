@@ -129,6 +129,21 @@ class CTS_Admin_Settings {
             'content-tracker-sync',
             'cts_main_section'
         );
+
+        // ----- Google Drive Folder ID (optional) -----
+        register_setting( self::OPTION_GROUP, 'cts_drive_folder_id', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        ) );
+
+        add_settings_field(
+            'cts_drive_folder_id',
+            __( 'Google Drive Folder ID (optional)', 'content-tracker-sync' ),
+            array( $this, 'render_drive_folder_id_field' ),
+            'content-tracker-sync',
+            'cts_main_section'
+        );
     }
 
     /**
@@ -216,6 +231,32 @@ class CTS_Admin_Settings {
         />
         <p class="description">
             <?php esc_html_e( 'The name of the tab/sheet inside your spreadsheet.', 'content-tracker-sync' ); ?>
+        </p>
+        <?php
+    }
+
+    /**
+     * Render the Google Drive Folder ID text field.
+     *
+     * @return void
+     */
+    public function render_drive_folder_id_field() {
+        $value = get_option( 'cts_drive_folder_id', '' );
+        ?>
+        <input
+            type="text"
+            id="cts_drive_folder_id"
+            name="cts_drive_folder_id"
+            value="<?php echo esc_attr( $value ); ?>"
+            class="regular-text"
+            placeholder="<?php esc_attr_e( 'e.g. 1FMb3VmDnCeApHRGlmN25CPXqwqtYZty2', 'content-tracker-sync' ); ?>"
+        />
+        <p class="description">
+            <?php esc_html_e( 'Optional. The ID of the Google Drive folder where article content docs will be saved. Find it in the folder URL after /folders/. Leave empty to skip doc creation.', 'content-tracker-sync' ); ?>
+        </p>
+        <p class="description" style="margin-top: 4px; color: #d63638;">
+            <strong><?php esc_html_e( 'Important:', 'content-tracker-sync' ); ?></strong>
+            <?php esc_html_e( 'Share this Drive folder with the service account email (same email as above) as Editor. Also enable the Google Drive API in your Google Cloud project.', 'content-tracker-sync' ); ?>
         </p>
         <?php
     }

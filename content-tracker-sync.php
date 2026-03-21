@@ -3,7 +3,7 @@
  * Plugin Name:       Content Tracker Sync
  * Plugin URI:        https://example.com/content-tracker-sync
  * Description:       Sync WordPress post data (title, slug, Yoast SEO fields, tags) to a Google Sheets editorial tracker with a single click.
- * Version:           3.2.0
+ * Version:           3.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Krish Goswami
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /*--------------------------------------------------------------
  * Constants
  *------------------------------------------------------------*/
-define( 'CTS_VERSION',    '3.2.0' );
+define( 'CTS_VERSION',    '3.3.0' );
 define( 'CTS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CTS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CTS_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -32,6 +32,7 @@ define( 'CTS_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
  *------------------------------------------------------------*/
 require_once CTS_PLUGIN_DIR . 'includes/class-admin-settings.php';
 require_once CTS_PLUGIN_DIR . 'includes/class-google-sheets-service.php';
+require_once CTS_PLUGIN_DIR . 'includes/class-google-docs-service.php';
 require_once CTS_PLUGIN_DIR . 'includes/class-sync-handler.php';
 require_once CTS_PLUGIN_DIR . 'includes/class-plugin-updater.php';
 
@@ -73,6 +74,7 @@ function cts_activate() {
     add_option( 'cts_credentials_json', '' );
     add_option( 'cts_spreadsheet_id',   '' );
     add_option( 'cts_sheet_name',        'Sheet1' );
+    add_option( 'cts_drive_folder_id',   '' );
 }
 
 /*--------------------------------------------------------------
@@ -90,5 +92,9 @@ function cts_deactivate() {
     $spreadsheet_id = get_option( 'cts_spreadsheet_id', '' );
     if ( $spreadsheet_id ) {
         delete_transient( 'cts_token_' . substr( md5( $spreadsheet_id ), 0, 12 ) );
+    }
+    $folder_id = get_option( 'cts_drive_folder_id', '' );
+    if ( $folder_id ) {
+        delete_transient( 'cts_drive_token_' . substr( md5( $folder_id ), 0, 12 ) );
     }
 }

@@ -122,6 +122,12 @@ class CTS_Google_Sheets_Service {
             'focus_keyword', 'keyphrase', 'focus key', 'primary keyword',
             'main keyword', 'target keyword', 'seo keyword', 'seo keyphrase',
         ),
+        'content_link' => array(
+            'content link', 'content_link', 'content url', 'doc link',
+            'doc url', 'google doc', 'google doc link', 'article link',
+            'article url', 'document link', 'document url', 'content for website',
+            'content', 'document', 'gdoc', 'gdoc link',
+        ),
     );
 
     /**
@@ -136,6 +142,11 @@ class CTS_Google_Sheets_Service {
         array( 'post_id',      'post_id' ),
         array( 'seo title',    'seo_title' ),
         array( 'seo heading',  'seo_title' ),
+        array( 'doc link',     'content_link' ),
+        array( 'doc url',      'content_link' ),
+        array( 'gdoc',         'content_link' ),
+        array( 'content link', 'content_link' ),
+        array( 'article link', 'content_link' ),
         array( 'hashtag',      'keywords_with_tags' ),
         array( 'with tags',    'keywords_with_tags' ),
         array( 'with tag',     'keywords_with_tags' ),

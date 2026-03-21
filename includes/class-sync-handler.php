@@ -327,13 +327,72 @@ class CTS_Sync_Handler
             ));
         }
 
+        // ----- Google Docs: Create/Update article content doc -----
+        $drive_folder_id = get_option('cts_drive_folder_id', '');
+        $doc_url = '';
+
+        if (!empty($drive_folder_id) && !empty($credentials)) {
+
+            $docs_service = new CTS_Google_Docs_Service($credentials, $drive_folder_id);
+
+            // Check if we already have a doc for this post.
+            $existing_doc_id = get_post_meta($post_id, '_cts_google_doc_id', true);
+
+            $doc_result = $docs_service->sync_post_to_doc(
+                $post_id,
+                $post->post_title,
+                $post->post_content,
+                $existing_doc_id ? $existing_doc_id : ''
+            );
+
+            if (!is_wp_error($doc_result)) {
+                // Save the doc ID for future updates.
+                update_post_meta($post_id, '_cts_google_doc_id', $doc_result['doc_id']);
+                $doc_url = $doc_result['doc_url'];
+
+                // Write the doc link to the spreadsheet if there's a matching column.
+                $link_data = array('content_link' => $doc_url);
+                $link_row = $sheets->map_data_to_row($link_data);
+
+                if (!is_wp_error($link_row)) {
+                    // Check if any cell actually has data (means a content_link column exists).
+                    $has_link_column = false;
+                    foreach ($link_row as $cell) {
+                        if (null !== $cell) {
+                            $has_link_column = true;
+                            break;
+                        }
+                    }
+
+                    if ($has_link_column) {
+                        $target_row = $existing_row ? $existing_row : $sheets->find_last_data_row();
+                        if ($target_row > 0) {
+                            $sheets->update_row($target_row, $link_row);
+                        }
+                    }
+                }
+            } else {
+                // Log doc creation errors but don't fail the whole sync.
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('[CTS] Google Doc error for post #' . $post_id . ': ' . $doc_result->get_error_message());
+                }
+            }
+        }
+
         // Save sync timestamp.
         update_post_meta($post_id, '_cts_last_synced', current_time('mysql'));
 
-        wp_send_json_success(array(
-            'message' => $existing_row
+        // Build success message.
+        $message = $existing_row
             ? __('Row updated in tracker ✓', 'content-tracker-sync')
-            : __('Synced to tracker ✓', 'content-tracker-sync'),
+            : __('Synced to tracker ✓', 'content-tracker-sync');
+
+        if ($doc_url) {
+            $message .= ' ' . __('+ Doc created ✓', 'content-tracker-sync');
+        }
+
+        wp_send_json_success(array(
+            'message' => $message,
         ));
     }
 
