@@ -136,12 +136,21 @@ class CTS_Google_Docs_Service {
             return $token;
         }
 
-        // --- Step 1: Create an empty Google Doc via Docs API ---
-        $create_url = self::DOCS_API_BASE . '/documents';
+        // --- Step 1: Create Google Doc via Drive API (files.create) ---
+        // Using Drive API instead of Docs API to bypass permission issues.
+        // Creates the doc directly in the target folder in one step.
+        $create_url = self::DRIVE_API_BASE . '/files?supportsAllDrives=true';
+
+        $file_metadata = array(
+            'name'     => $title,
+            'mimeType' => 'application/vnd.google-apps.document',
+            'parents'  => array( $this->folder_id ),
+        );
 
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            error_log( '[CTS-DOCS] Step 1: Creating doc via POST ' . $create_url );
+            error_log( '[CTS-DOCS] Step 1: Creating doc via Drive API POST ' . $create_url );
             error_log( '[CTS-DOCS] Using service account: ' . ( isset( $this->credentials['client_email'] ) ? $this->credentials['client_email'] : 'UNKNOWN' ) );
+            error_log( '[CTS-DOCS] Target folder: ' . $this->folder_id );
         }
 
         $create_response = wp_remote_post( $create_url, array(
@@ -150,52 +159,29 @@ class CTS_Google_Docs_Service {
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type'  => 'application/json',
             ),
-            'body'    => wp_json_encode( array( 'title' => $title ) ),
+            'body'    => wp_json_encode( $file_metadata ),
         ) );
 
-        $create_result = $this->parse_response( $create_response, 'Step 1: Create Doc' );
+        $create_result = $this->parse_response( $create_response, 'Step 1: Create Doc via Drive API' );
         if ( is_wp_error( $create_result ) ) {
             return new WP_Error( 'cts_docs_error', '[Create Doc] ' . $create_result->get_error_message() );
         }
 
-        $new_doc_id = isset( $create_result['documentId'] ) ? $create_result['documentId'] : '';
+        // Drive API returns 'id' (not 'documentId').
+        $new_doc_id = isset( $create_result['id'] ) ? $create_result['id'] : '';
         if ( empty( $new_doc_id ) ) {
-            return new WP_Error( 'cts_docs_error', 'Google Docs API did not return a document ID.' );
+            return new WP_Error( 'cts_docs_error', 'Drive API did not return a file ID.' );
         }
-
-        // --- Step 2: Move doc into the shared folder via Drive API ---
-        $move_url = self::DRIVE_API_BASE . '/files/' . $new_doc_id
-                  . '?addParents=' . urlencode( $this->folder_id )
-                  . '&removeParents=root'
-                  . '&supportsAllDrives=true';
 
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            error_log( '[CTS-DOCS] Step 2: Moving doc ' . $new_doc_id . ' to folder ' . $this->folder_id );
+            error_log( '[CTS-DOCS] Doc created successfully: ' . $new_doc_id );
         }
 
-        $move_response = wp_remote_request( $move_url, array(
-            'method'  => 'PATCH',
-            'timeout' => 15,
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type'  => 'application/json',
-            ),
-            'body'    => '{}',
-        ) );
-
-        $move_result = $this->parse_response( $move_response, 'Step 2: Move to Folder' );
-        if ( is_wp_error( $move_result ) ) {
-            // Doc was created but couldn't be moved — still usable.
-            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( '[CTS-DOCS] Could not move doc to folder: ' . $move_result->get_error_message() );
-            }
-        }
-
-        // --- Step 3: Insert content via Docs batchUpdate ---
+        // --- Step 2: Insert content via Docs batchUpdate ---
         if ( ! empty( $plain_text ) ) {
             $insert_error = $this->insert_text( $new_doc_id, $plain_text, $token );
             if ( is_wp_error( $insert_error ) && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( '[CTS] Could not insert content: ' . $insert_error->get_error_message() );
+                error_log( '[CTS-DOCS] Could not insert content: ' . $insert_error->get_error_message() );
             }
         }
 
