@@ -422,7 +422,7 @@ class CTS_Google_Docs_Service {
             return $this->access_token;
         }
 
-        $transient_key = 'cts_drive_token_' . substr( md5( $this->folder_id ), 0, 12 );
+        $transient_key = 'cts_docs_token_v2_' . substr( md5( $this->folder_id ), 0, 12 );
 
         $cached = get_transient( $transient_key );
         if ( $cached ) {
