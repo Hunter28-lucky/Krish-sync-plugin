@@ -90,9 +90,8 @@ class CTS_Google_Sheets_Service {
         ),
         'title' => array(
             'title', 'topic', 'topic (title)', 'post title', 'headline',
-            'article title', 'name', 'magazine category', 'article',
-            'blog title', 'content title', 'heading', 'subject',
-            'page title', 'entry title', 'content name',
+            'article title', 'article', 'blog title', 'content title',
+            'heading', 'subject', 'page title', 'entry title', 'content name',
         ),
         'slug' => array(
             'slug', 'post slug', 'url slug', 'permalink', 'post_slug',

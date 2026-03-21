@@ -3,7 +3,7 @@
  * Plugin Name:       Content Tracker Sync
  * Plugin URI:        https://example.com/content-tracker-sync
  * Description:       Sync WordPress post data (title, slug, Yoast SEO fields, tags) to a Google Sheets editorial tracker with a single click.
- * Version:           3.3.5
+ * Version:           3.4.2
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Krish Goswami
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /*--------------------------------------------------------------
  * Constants
  *------------------------------------------------------------*/
-define( 'CTS_VERSION',    '3.3.5' );
+define( 'CTS_VERSION',    '3.4.2' );
 define( 'CTS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CTS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CTS_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
